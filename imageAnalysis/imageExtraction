@@ -1,0 +1,119 @@
+import fitz  # PyMuPDF
+import io
+import cv2
+from PIL import Image
+import os
+import numpy as np
+
+def extract_images_from_pdf(pdf_path, output_folder):
+    # Open the PDF file
+    pdf_document = fitz.open(pdf_path)
+    image_count = 0
+
+    # Ensure output directory exists
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Iterate through each page
+    for page_index in range(len(pdf_document)):
+        # Get the page
+        page = pdf_document.load_page(page_index)
+        image_list = page.get_images(full=True)
+
+        # Print the number of images found on this page
+        if image_list:
+            print(f"[INFO] Found {len(image_list)} images on page {page_index}")
+        else:
+            print(f"[INFO] No images found on page {page_index}")
+
+        for image_index, img in enumerate(page.get_images(full=True)):
+            xref = img[0]
+            base_image = pdf_document.extract_image(xref)
+            image_bytes = base_image["image"]
+
+            # Convert bytes to an image
+            image = Image.open(io.BytesIO(image_bytes))
+            image_path = f"{output_folder}/image{page_index + 1}_{image_index + 1}.png"
+            image.save(image_path)
+            image_count += 1
+
+    print(f"[INFO] Total {image_count} images extracted")
+
+# def detect_graphs(image_folder, graph_output_folder):
+#     # Ensure graph output directory exists
+#     os.makedirs(graph_output_folder, exist_ok=True)
+    
+#     # Iterate over all images in the folder
+#     for image_name in os.listdir(image_folder):
+#         image_path = os.path.join(image_folder, image_name)
+        
+#         # Read the image
+#         image = cv2.imread(image_path)
+#         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+#         # Apply GaussianBlur to reduce noise and improve edge detection
+#         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        
+#         # Apply edge detection
+#         edges = cv2.Canny(blurred, threshold1=50, threshold2=150)
+        
+#         # Find contours
+#         contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+#         for i, contour in enumerate(contours):
+#             x, y, w, h = cv2.boundingRect(contour)
+            
+#             # Filter out small regions (assuming graphs are larger)
+#             if w > 100 and h > 100:
+#                 graph_region = image[y:y+h, x:x+w]
+#                 graph_path = os.path.join(graph_output_folder, f'graph_{image_name}_{i}.png')
+#                 cv2.imwrite(graph_path, graph_region)
+#                 print(f"[INFO] Saved graph to {graph_path}")
+
+def detect_graph_features(image_path, white_pixel_threshold=0.6, min_lines=5, min_contours=5):
+    # Load image in grayscale
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        return False
+    
+    # Apply edge detection
+    edges = cv2.Canny(image, 50, 150, apertureSize=3)
+
+    # Detect lines in the image using Hough Line Transform
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
+    
+    # Detect contours
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    white_pixels = np.sum(image == 255)
+    total_pixels = image.size
+    white_pixel_ratio = white_pixels / total_pixels
+
+     # Debugging output
+    print(f"[DEBUG] {image_path}: lines={len(lines) if lines is not None else 0}, contours={len(contours)}, white_pixel_ratio={white_pixel_ratio}")
+
+
+    # Heuristic: If there are a significant number of lines and contours, and the white pixel ratio is high, it might be a graph
+    if lines is not None and len(lines) > 10 and len(contours) > 10 and white_pixel_ratio > white_pixel_threshold:
+        return True
+    return False
+
+def filter_graph_images(input_folder, output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+    for image_name in os.listdir(input_folder):
+        image_path = os.path.join(input_folder, image_name)
+        if detect_graph_features(image_path):
+            output_path = os.path.join(output_folder, image_name)
+            cv2.imwrite(output_path, cv2.imread(image_path))
+            print(f"[INFO] Graph detected and saved: {output_path}")
+        else:
+            print(f"[INFO] Not a graph: {image_path}")
+# Usage
+pdf_path = r"C:\Users\Alwin Soly\Desktop\li-ion\li-ion\journals\s42452-020-2675-6.pdf"
+image_output_folder = r"C:\Users\Alwin Soly\Desktop\li-ion\li-ion\images"
+graph_output_folder = r"C:\Users\Alwin Soly\Desktop\li-ion\li-ion\graphs"
+
+# Step 1: Extract images from PDF
+extract_images_from_pdf(pdf_path, image_output_folder)
+
+# Step 2: Detect and save graphs from the extracted images
+filter_graph_images(image_output_folder, graph_output_folder)
